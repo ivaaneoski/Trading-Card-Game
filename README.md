@@ -251,10 +251,4 @@ PORT=3000
 - [ ] Guilds & social features
 - [ ] In-game shop (cosmetics)
 
-## License
 
-MIT
-
-## Support
-
-For issues or questions, open a GitHub issue or contact dev@tcg-arena.com
