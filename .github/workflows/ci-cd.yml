@@ -1,0 +1,60 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: tcg_test
+          POSTGRES_USER: tcg_user
+          POSTGRES_PASSWORD: test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install
+      - run: npm run lint
+      - run: npm run type-check
+      - run: npm run build
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and push Docker images
+        run: |
+          echo ${{ secrets.DOCKER_PASSWORD }} | docker login -u ${{ secrets.DOCKER_USERNAME }} --password-stdin
+          docker build --target backend-runtime -t tcg-backend:latest .
+          docker tag tcg-backend:latest ${{ secrets.DOCKER_USERNAME }}/tcg-backend:latest
+          docker push ${{ secrets.DOCKER_USERNAME }}/tcg-backend:latest
+          docker build --target frontend-runtime -t tcg-frontend:latest .
+          docker tag tcg-frontend:latest ${{ secrets.DOCKER_USERNAME }}/tcg-frontend:latest
+          docker push ${{ secrets.DOCKER_USERNAME }}/tcg-frontend:latest
+
+      - name: Deploy to Kubernetes
+        run: |
+          # Example using kubectl
+          kubectl set image deployment/tcg-backend tcg-backend=${{ secrets.DOCKER_USERNAME }}/tcg-backend:latest -n production
+          kubectl set image deployment/tcg-frontend tcg-frontend=${{ secrets.DOCKER_USERNAME }}/tcg-frontend:latest -n production
+        env:
+          KUBECONFIG: ${{ secrets.KUBECONFIG }}

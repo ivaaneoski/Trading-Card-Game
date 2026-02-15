@@ -1,0 +1,167 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User & Auth
+model User {
+  id        String     @id @default(cuid())
+  username  String     @unique @db.VarChar(50)
+  email     String     @unique @db.VarChar(255)
+  password  String
+  elo       Int        @default(1200)
+  wins      Int        @default(0)
+  losses    Int        @default(0)
+  totalGames Int       @default(0)
+  avatar    String?
+  bio       String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  cards     Card[]
+  decks     Deck[]
+  matches   Match[]    @relation("player")
+  moves     Move[]
+  eloHistory EloHistory[]
+
+  @@index([elo])
+  @@index([createdAt])
+}
+
+// Card
+model Card {
+  id        String   @id @default(cuid())
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name      String   @db.VarChar(100)
+  imageUrl  String
+  cost      Int      @default(1)
+  attack    Int      @default(1)
+  defense   Int      @default(1)
+  abilities String   @default("[]") // JSON string of ability names
+  rarity    String   @default("common")
+  version   Int      @default(1)
+  isApproved Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  deckCards DeckCard[]
+  
+  @@unique([ownerId, name])
+  @@index([ownerId])
+  @@index([isApproved])
+}
+
+// Deck
+model Deck {
+  id        String   @id @default(cuid())
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name      String   @db.VarChar(100)
+  description String?
+  checksum  String   // hash of deck contents for anti-cheat
+  isPublic  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cards     DeckCard[]
+  matches   Match[]
+  
+  @@unique([ownerId, name])
+  @@index([ownerId])
+}
+
+// Deck -> Card (many-to-many with multiplicity)
+model DeckCard {
+  id        String @id @default(cuid())
+  deckId    String
+  deck      Deck   @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  cardId    String
+  card      Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  quantity  Int    @default(1)
+
+  @@unique([deckId, cardId])
+  @@index([deckId])
+}
+
+// Match
+model Match {
+  id            String     @id @default(cuid())
+  player1Id     String
+  player2Id     String
+  player1       User       @relation("player", fields: [player1Id], references: [id])
+  deck1Id       String
+  deck1         Deck       @relation(fields: [deck1Id], references: [id])
+  deck2Id       String
+  status        String     @default("pending") // pending, active, completed
+  winner        String?    // player1Id or player2Id
+  result        String?    // "win", "loss", "draw"
+  eloChange1    Int        @default(0)
+  eloChange2    Int        @default(0)
+  replayUrl     String?
+  roomId        String?    @unique
+  startedAt     DateTime?
+  endedAt       DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  moves         Move[]
+  
+  @@unique([player1Id, player2Id, createdAt])
+  @@index([player1Id])
+  @@index([player2Id])
+  @@index([status])
+}
+
+// Move (game action)
+model Move {
+  id                String   @id @default(cuid())
+  matchId           String
+  match             Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  playerId          String
+  player            User     @relation(fields: [playerId], references: [id])
+  turnNumber        Int
+  moveType          String   // "play_card", "attack", "ability", "pass"
+  payload           String   // JSON: {cardId?, targetId?, abilityId?, etc}
+  serverValidated   Boolean  @default(false)
+  validationError   String?
+  timestamp         DateTime @default(now())
+
+  @@index([matchId])
+  @@index([playerId])
+}
+
+// ELO History (for leaderboards & trending)
+model EloHistory {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  elo       Int
+  change    Int
+  reason    String   // "match_win", "match_loss", "season_reset"
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// Audit (anti-cheat & analytics)
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  event     String   // "invalid_move", "suspicious_login", "card_upload", etc
+  severity  String   @default("info") // info, warning, critical
+  details   String   // JSON payload
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([severity])
+  @@index([event])
+}

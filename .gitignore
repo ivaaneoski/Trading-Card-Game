@@ -1,0 +1,11 @@
+.env.local
+.env.production.local
+node_modules/
+dist/
+build/
+.DS_Store
+*.log
+.turbo/
+.next/
+coverage/
+.vscode/settings.json
